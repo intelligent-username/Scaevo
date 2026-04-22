@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Scaevo</string>
+    <string name="accessibility_service_description">Scaevo uses Accessibility Service to detect and block specified apps by redirecting to the home screen when a blocked app is opened.</string>
+</resources>

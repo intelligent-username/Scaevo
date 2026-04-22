@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Eye / clock shape representing screen time tracking -->
+    <path
+        android:fillColor="#6C8EFF"
+        android:pathData="M54,26c-15.46,0 -28,12.54 -28,28s12.54,28 28,28 28,-12.54 28,-28 -12.54,-28 -28,-28zM54,76c-12.15,0 -22,-9.85 -22,-22s9.85,-22 22,-22 22,9.85 22,22 -9.85,22 -22,22z"/>
+    <path
+        android:fillColor="#6C8EFF"
+        android:pathData="M55,32v22.83l12.59,12.59 4.24,-4.24 -10.83,-10.83V32z"/>
+</vector>

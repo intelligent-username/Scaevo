@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose manages its own Material3 theming at runtime.
+         This XML theme only needs to suppress the native ActionBar. -->
+    <style name="Theme.Scaevo" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">#FF12141F</item>
+        <item name="android:statusBarColor">#FF12141F</item>
+        <item name="android:navigationBarColor">#FF12141F</item>
+    </style>
+</resources>

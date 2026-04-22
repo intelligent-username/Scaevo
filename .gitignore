@@ -1,0 +1,42 @@
+# Android/Gradle/Scaevo Gitignore
+
+# Project specific
+note/
+
+# Gradle files
+.gradle/
+build/
+app/build/
+*_output.txt
+
+# IDE files
+.idea/
+*.iml
+*.iws
+.project
+.classpath
+.settings/
+.vscode/
+
+# Build artifacts
+*.apk
+*.aar
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+
+# Secrets & Local Config
+local.properties
+keystore.properties
+signing/
+*.jks
+*.keystore
+
+# System files
+.DS_Store
+Thumbs.db
+
+# KSP/Generated files (optional, usually ignored)
+app/schemas/
