@@ -20,6 +20,11 @@ class UsageStatsHelper @Inject constructor(
 
     private val packageManager = context.packageManager
 
+    // Track only launcher apps so system packages/launcher don't skew user-facing usage.
+    private val trackablePackages: Set<String> by lazy {
+        getInstalledUserApps().map { it.first }.toSet()
+    }
+
     data class AppForegroundDuration(
         val packageName: String,
         val totalForegroundMs: Long
@@ -34,7 +39,7 @@ class UsageStatsHelper @Inject constructor(
         if (!hasUsagePermission()) return emptyList()
         return usageStatsManager
             .queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startMs, endMs)
-            ?.filter { it.totalTimeInForeground > 0 && it.packageName != context.packageName }
+            ?.filter { it.totalTimeInForeground > 0 && shouldTrackPackage(it.packageName) }
             ?: emptyList()
     }
 
@@ -46,65 +51,105 @@ class UsageStatsHelper @Inject constructor(
         if (!hasUsagePermission() || endMs <= startMs) return emptyList()
 
         val durations = mutableMapOf<String, Long>()
-        val activeStart = mutableMapOf<String, Long>()
-        var currentForegroundPackage: String? = null
+        
+        // Find the initial state: was an app already in the foreground at startMs?
+        // We look back up to 24 hours to find the last state-changing event.
+        val lookbackStartTime = startMs - (24 * 60 * 60 * 1000L)
+        val initialEvents = usageStatsManager.queryEvents(lookbackStartTime, startMs)
+        val initialEvent = UsageEvents.Event()
+        var lastResumedPackageAtStart: String? = null
+        var lastResumedTimeAtStart: Long? = null
+        var isScreenOnAtStart = true // Assume ON unless we see a screen-off event
+
+        while (initialEvents.hasNextEvent()) {
+            initialEvents.getNextEvent(initialEvent)
+            when (initialEvent.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    if (shouldTrackPackage(initialEvent.packageName)) {
+                        lastResumedPackageAtStart = initialEvent.packageName
+                        lastResumedTimeAtStart = initialEvent.timeStamp
+                    }
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.MOVE_TO_BACKGROUND,
+                UsageEvents.Event.ACTIVITY_STOPPED -> {
+                    if (initialEvent.packageName == lastResumedPackageAtStart) {
+                        lastResumedPackageAtStart = null
+                        lastResumedTimeAtStart = null
+                    }
+                }
+                UsageEvents.Event.KEYGUARD_SHOWN,
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                    isScreenOnAtStart = false
+                }
+                UsageEvents.Event.KEYGUARD_HIDDEN,
+                UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                    isScreenOnAtStart = true
+                }
+            }
+        }
+
+        // If screen was off at start, we shouldn't attribute time to any app yet.
+        var currentForegroundPackage: String? = if (isScreenOnAtStart) lastResumedPackageAtStart else null
+        var currentForegroundStartMs: Long? = if (currentForegroundPackage != null) startMs else null
 
         val events = usageStatsManager.queryEvents(startMs, endMs)
         val event = UsageEvents.Event()
 
-        fun closeSession(packageName: String, stopMs: Long) {
-            val start = activeStart.remove(packageName) ?: return
+        fun closeCurrentSession(stopMs: Long) {
+            val packageName = currentForegroundPackage ?: return
+            val start = currentForegroundStartMs ?: return
             val duration = stopMs - start
             if (duration > 0) durations[packageName] = (durations[packageName] ?: 0L) + duration
+            currentForegroundPackage = null
+            currentForegroundStartMs = null
         }
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val packageName = event.packageName ?: continue
-            if (packageName == context.packageName) continue
-
             when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    val current = currentForegroundPackage
-                    if (current != null && current != packageName) {
-                        closeSession(current, event.timeStamp)
-                    }
-
-                    // Ignore duplicate resume signals for a package that's already tracked.
-                    if (currentForegroundPackage == packageName && activeStart.containsKey(packageName)) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    val packageName = event.packageName
+                    if (!shouldTrackPackage(packageName)) {
+                        closeCurrentSession(event.timeStamp)
                         continue
                     }
 
-                    activeStart[packageName] = event.timeStamp
+                    if (currentForegroundPackage == packageName) continue
+
+                    closeCurrentSession(event.timeStamp)
                     currentForegroundPackage = packageName
+                    currentForegroundStartMs = event.timeStamp
                 }
 
                 UsageEvents.Event.ACTIVITY_PAUSED,
                 UsageEvents.Event.MOVE_TO_BACKGROUND,
                 UsageEvents.Event.ACTIVITY_STOPPED -> {
-                    closeSession(packageName, event.timeStamp)
-                    if (currentForegroundPackage == packageName) {
-                        currentForegroundPackage = null
+                    val packageName = event.packageName
+                    if (packageName != null && packageName == currentForegroundPackage) {
+                        closeCurrentSession(event.timeStamp)
                     }
                 }
 
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    val current = currentForegroundPackage
-                    if (current != null && current != packageName) {
-                        closeSession(current, event.timeStamp)
-                    }
-                    if (!activeStart.containsKey(packageName)) {
-                        activeStart[packageName] = event.timeStamp
-                    }
-                    currentForegroundPackage = packageName
+                UsageEvents.Event.KEYGUARD_SHOWN,
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    closeCurrentSession(event.timeStamp)
+                }
+                
+                UsageEvents.Event.KEYGUARD_HIDDEN,
+                UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                    // When screen wakes up, find what's currently in foreground.
+                    // Usually there's a RESUMED event following, but we can look ahead or wait.
+                    // For now, we rely on the RESUMED event that should follow.
                 }
             }
         }
 
-        activeStart.forEach { (packageName, start) ->
-            val duration = endMs - start
-            if (duration > 0) durations[packageName] = (durations[packageName] ?: 0L) + duration
-        }
+        // Handle live tracking for the currently foreground app
+        closeCurrentSession(endMs)
 
         return durations
             .filterValues { it > 0L }
@@ -122,8 +167,9 @@ class UsageStatsHelper @Inject constructor(
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                counts[event.packageName] = (counts[event.packageName] ?: 0) + 1
+            val packageName = event.packageName
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED && shouldTrackPackage(packageName)) {
+                counts[packageName!!] = (counts[packageName] ?: 0) + 1
             }
         }
         return counts
@@ -173,75 +219,83 @@ class UsageStatsHelper @Inject constructor(
     fun queryHourlyBreakdown(startMs: Long, endMs: Long): LongArray {
         if (!hasUsagePermission()) return LongArray(24)
         val hourlyMs = LongArray(24)
+        
+        // Find initial state
+        val lookbackStartTime = startMs - (24 * 60 * 60 * 1000L)
+        val initialEvents = usageStatsManager.queryEvents(lookbackStartTime, startMs)
+        val initialEvent = UsageEvents.Event()
+        var lastResumedPackageAtStart: String? = null
+        var isScreenOnAtStart = true
+
+        while (initialEvents.hasNextEvent()) {
+            initialEvents.getNextEvent(initialEvent)
+            when (initialEvent.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    if (shouldTrackPackage(initialEvent.packageName)) lastResumedPackageAtStart = initialEvent.packageName
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.MOVE_TO_BACKGROUND,
+                UsageEvents.Event.ACTIVITY_STOPPED -> {
+                    if (initialEvent.packageName == lastResumedPackageAtStart) lastResumedPackageAtStart = null
+                }
+                UsageEvents.Event.KEYGUARD_SHOWN, UsageEvents.Event.SCREEN_NON_INTERACTIVE -> {
+                    isScreenOnAtStart = false
+                }
+                UsageEvents.Event.KEYGUARD_HIDDEN, UsageEvents.Event.SCREEN_INTERACTIVE -> {
+                    isScreenOnAtStart = true
+                }
+            }
+        }
+
+        var currentForegroundPackage: String? = if (isScreenOnAtStart) lastResumedPackageAtStart else null
+        var currentForegroundStartMs: Long? = if (currentForegroundPackage != null) startMs else null
+
         val events = usageStatsManager.queryEvents(startMs, endMs)
         val event = UsageEvents.Event()
-        val resumeTimes = mutableMapOf<String, Long>()
-        var currentForegroundPackage: String? = null
 
-        fun closeAndSplit(packageName: String, stopMs: Long) {
-            val start = resumeTimes.remove(packageName) ?: return
+        fun closeCurrentAndSplit(stopMs: Long) {
+            val start = currentForegroundStartMs ?: return
             if (stopMs <= start) return
             addDurationSplitByHour(hourlyMs, start, stopMs)
+            currentForegroundPackage = null
+            currentForegroundStartMs = null
         }
 
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    val packageName = event.packageName ?: continue
-                    if (packageName == context.packageName) continue
-
-                    val current = currentForegroundPackage
-                    if (current != null && current != packageName) {
-                        closeAndSplit(current, event.timeStamp)
-                    }
-
-                    if (currentForegroundPackage == packageName && resumeTimes.containsKey(packageName)) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    val packageName = event.packageName
+                    if (!shouldTrackPackage(packageName)) {
+                        closeCurrentAndSplit(event.timeStamp)
                         continue
                     }
 
-                    resumeTimes[packageName] = event.timeStamp
-                    currentForegroundPackage = packageName
-                }
+                    if (currentForegroundPackage == packageName) continue
 
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    val packageName = event.packageName ?: continue
-                    closeAndSplit(packageName, event.timeStamp)
-                    if (currentForegroundPackage == packageName) {
-                        currentForegroundPackage = null
-                    }
+                    closeCurrentAndSplit(event.timeStamp)
+                    currentForegroundPackage = packageName
+                    currentForegroundStartMs = event.timeStamp
                 }
 
                 UsageEvents.Event.ACTIVITY_STOPPED,
+                UsageEvents.Event.ACTIVITY_PAUSED,
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> {
-                    val packageName = event.packageName ?: continue
-                    closeAndSplit(packageName, event.timeStamp)
-                    if (currentForegroundPackage == packageName) {
-                        currentForegroundPackage = null
+                    val packageName = event.packageName
+                    if (packageName != null && packageName == currentForegroundPackage) {
+                        closeCurrentAndSplit(event.timeStamp)
                     }
                 }
 
-                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    val packageName = event.packageName ?: continue
-                    if (packageName == context.packageName) continue
-
-                    val current = currentForegroundPackage
-                    if (current != null && current != packageName) {
-                        closeAndSplit(current, event.timeStamp)
-                    }
-                    if (!resumeTimes.containsKey(packageName)) {
-                        resumeTimes[packageName] = event.timeStamp
-                    }
-                    currentForegroundPackage = packageName
+                UsageEvents.Event.KEYGUARD_SHOWN,
+                UsageEvents.Event.SCREEN_NON_INTERACTIVE,
+                UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    closeCurrentAndSplit(event.timeStamp)
                 }
             }
         }
 
-        resumeTimes.forEach { (_, start) ->
-            if (endMs > start) {
-                addDurationSplitByHour(hourlyMs, start, endMs)
-            }
-        }
+        closeCurrentAndSplit(endMs)
 
         return hourlyMs
     }
@@ -275,5 +329,10 @@ class UsageStatsHelper @Inject constructor(
             if (event.eventType == UsageEvents.Event.KEYGUARD_HIDDEN) count++
         }
         return count
+    }
+
+    private fun shouldTrackPackage(packageName: String?): Boolean {
+        if (packageName == null || packageName == context.packageName) return false
+        return trackablePackages.contains(packageName)
     }
 }

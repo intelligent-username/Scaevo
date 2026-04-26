@@ -3,7 +3,7 @@ package com.scaevo.blocking
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.scaevo.ui.permissions.isAccessibilityServiceEnabled
+import com.scaevo.ui.utils.isAccessibilityServiceEnabled
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

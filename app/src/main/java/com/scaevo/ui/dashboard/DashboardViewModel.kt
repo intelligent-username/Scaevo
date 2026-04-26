@@ -37,13 +37,16 @@ class DashboardViewModel @Inject constructor(
     val isLoading = MutableStateFlow(true)
 
     init {
-        loadToday()
+        loadToday(showLoading = true)
+        startLiveRefreshLoop()
         startMidnightRefreshLoop()
     }
 
-    fun loadToday() {
+    fun loadToday(showLoading: Boolean = false) {
         viewModelScope.launch {
-            isLoading.value = true
+            if (showLoading) {
+                isLoading.value = true
+            }
             val today = LocalDate.now()
             val startMs = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
             val currentMs = System.currentTimeMillis()
@@ -55,8 +58,19 @@ class DashboardViewModel @Inject constructor(
             _unlockCount.value = withContext(Dispatchers.IO) {
                 usageStatsHelper.queryUnlockCount(startMs, currentMs)
             }
-            
-            isLoading.value = false
+
+            if (showLoading) {
+                isLoading.value = false
+            }
+        }
+    }
+
+    private fun startLiveRefreshLoop() {
+        viewModelScope.launch {
+            while (isActive) {
+                delay(20_000L)
+                loadToday(showLoading = false)
+            }
         }
     }
 

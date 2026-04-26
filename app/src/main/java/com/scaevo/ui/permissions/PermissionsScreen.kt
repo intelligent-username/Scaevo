@@ -23,7 +23,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.scaevo.blocking.AppBlockingAccessibilityService
+import com.scaevo.ui.utils.isAccessibilityServiceEnabled
+import com.scaevo.widget.UsageWidget
+import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.launch
 import com.scaevo.data.usage.UsageStatsHelper
 
 @Composable
@@ -52,8 +55,13 @@ fun PermissionsScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    val scope = rememberCoroutineScope()
+
     LaunchedEffect(hasUsage, hasAccessibility) {
-        if (hasUsage && hasAccessibility) onAllGranted()
+        if (hasUsage && hasAccessibility) {
+            scope.launch { UsageWidget().updateAll(context) }
+            onAllGranted()
+        }
     }
 
     LazyColumn(
@@ -228,16 +236,6 @@ private fun PermissionCard(
     }
 }
 
-fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val componentName = ComponentName(context, AppBlockingAccessibilityService::class.java)
-    val enabledServices = Settings.Secure.getString(
-        context.contentResolver,
-        Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-    ) ?: return false
-    return enabledServices.split(":").any {
-        ComponentName.unflattenFromString(it) == componentName
-    }
-}
 
 fun isBatteryOptimizationIgnored(context: Context): Boolean {
     val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager

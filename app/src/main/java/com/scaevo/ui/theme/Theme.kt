@@ -21,12 +21,18 @@ private val GithubLightMuted = Color(0xFF57606A)
 private val GithubLightBorder = Color(0xFFD0D7DE)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = GithubBlue,
-    onPrimary = Color(0xFF0D1117),
-    primaryContainer = Color(0xFF1F6FEB),
-    onPrimaryContainer = Color.White,
-    secondary = Color(0xFF7D8590),
-    onSecondary = Color.White,
+    primary = Color(0xFF00E5FF),
+    onPrimary = Color(0xFF001417),
+    primaryContainer = Color(0xFF00343A),
+    onPrimaryContainer = Color(0xFFA9F7FF),
+    secondary = Color(0xFF39FF14),
+    onSecondary = Color(0xFF091500),
+    secondaryContainer = Color(0xFF123A05),
+    onSecondaryContainer = Color(0xFFB9FFAA),
+    tertiary = Color(0xFFFF2BD6),
+    onTertiary = Color(0xFF2B0024),
+    tertiaryContainer = Color(0xFF4D0040),
+    onTertiaryContainer = Color(0xFFFFB5EB),
     background = GithubDarkBg,
     onBackground = GithubDarkText,
     surface = GithubDarkSurface,
@@ -34,7 +40,7 @@ private val DarkColorScheme = darkColorScheme(
     surfaceVariant = GithubDarkSurfaceVariant,
     onSurfaceVariant = GithubDarkMuted,
     outline = GithubDarkBorder,
-    error = Color(0xFFF85149),
+    error = Color(0xFFFF5470),
     onError = Color(0xFF0D1117)
 )
 

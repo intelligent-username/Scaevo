@@ -7,13 +7,14 @@ import com.scaevo.data.repository.BlocklistRepository
 import com.scaevo.data.usage.UsageStatsHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
@@ -37,13 +38,25 @@ class BlocklistViewModel @Inject constructor(
     init {
         viewModelScope.launch(Dispatchers.IO) {
             _installedApps.value = usageStatsHelper.getInstalledUserApps()
-            
-            val today = LocalDate.now()
-            val startMs = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-            val endMs = System.currentTimeMillis()
-            val stats = usageStatsHelper.queryUsageForRange(startMs, endMs)
-            _todayLiveUsages.value = stats.associate { it.packageName to it.totalTimeInForeground }
         }
+        startLiveUsageRefreshLoop()
+    }
+
+    private fun startLiveUsageRefreshLoop() {
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                refreshTodayLiveUsages()
+                delay(20_000L)
+            }
+        }
+    }
+
+    private fun refreshTodayLiveUsages() {
+        val today = LocalDate.now()
+        val startMs = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val endMs = System.currentTimeMillis()
+        val stats = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs)
+        _todayLiveUsages.value = stats.associate { it.packageName to it.totalForegroundMs }
     }
 
     fun addToBlocklist(packageName: String, label: String) {

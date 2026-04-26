@@ -5,14 +5,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.scaevo.ui.components.DonutChart
 import com.scaevo.ui.components.WeeklyTrendChart
@@ -93,6 +98,7 @@ fun ReportScreen(
                 itemsIndexed(sortedTotals) { index, stat ->
                     ReportRow(
                         rank = index + 1,
+                        packageName = stat.packageName,
                         appLabel = stat.appLabel,
                         totalMs = stat.totalForegroundMs,
                         maxMs = maxMs,
@@ -107,27 +113,46 @@ fun ReportScreen(
 @Composable
 private fun ReportRow(
     rank: Int,
+    packageName: String,
     appLabel: String,
     totalMs: Long,
     maxMs: Long,
     onClick: () -> Unit
 ) {
     val fraction = (totalMs.toFloat() / maxMs).coerceIn(0f, 1f)
+    val context = LocalContext.current
+    val appIcon = remember(packageName) {
+        runCatching {
+            context.packageManager.getApplicationIcon(packageName)
+                .toBitmap(72, 72)
+                .asImageBitmap()
+        }.getOrNull()
+    }
 
     ListItem(
         modifier = Modifier.clickable { onClick() },
         leadingContent = {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Text(
-                        "$rank",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(26.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Text(
+                            "$rank",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                if (appIcon != null) {
+                    Image(
+                        bitmap = appIcon,
+                        contentDescription = "$appLabel icon",
+                        modifier = Modifier.size(28.dp)
                     )
                 }
             }

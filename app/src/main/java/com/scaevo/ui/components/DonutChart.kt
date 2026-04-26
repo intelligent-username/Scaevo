@@ -7,6 +7,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -14,32 +18,40 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.detectTapGestures
 import com.scaevo.data.db.entity.DailyUsageStat
 import com.scaevo.ui.utils.formatDuration
+import kotlin.math.atan2
+import kotlin.math.sqrt
 
 private val CHART_COLORS = listOf(
-    Color(0xFF58A6FF),
-    Color(0xFF3FB950),
-    Color(0xFFF2CC60),
-    Color(0xFFBC8CFF),
-    Color(0xFF7EE787),
+    Color(0xFF00E5FF),
+    Color(0xFF39FF14),
+    Color(0xFFFF2BD6),
+    Color(0xFFFFE600),
+    Color(0xFFFF6B00),
+    Color(0xFF8A2BFF),
 )
-private val OTHERS_COLOR = Color(0xFF8B949E)
+private val OTHERS_COLOR = Color(0xFF6E7681)
 
 data class DonutSlice(val label: String, val value: Long, val color: Color)
+private data class SliceAngle(val startAngle: Float, val sweepAngle: Float, val slice: DonutSlice)
 
 @Composable
 fun DonutChart(
     stats: List<DailyUsageStat>,
     modifier: Modifier = Modifier,
     maxSlices: Int = 5,
-    strokeWidthDp: Float = 36f
+    strokeWidthDp: Float = 42f,
+    chartSizeDp: Dp = 280.dp
 ) {
     if (stats.isEmpty()) return
 
@@ -57,11 +69,22 @@ fun DonutChart(
     else topSlices
 
     val totalLabel = formatDuration(totalMs)
-    val chartSize = 200.dp
+    val gapDegrees = 2f
+    val sliceAngles = remember(slices, totalMs) {
+        buildList {
+            var startAngle = -90f
+            val maxSweep = 360f - gapDegrees * slices.size
+            slices.forEach { slice ->
+                val sweep = (slice.value.toFloat() / totalMs.toFloat()) * maxSweep
+                add(SliceAngle(startAngle, sweep, slice))
+                startAngle += sweep + gapDegrees
+            }
+        }
+    }
 
     val density = LocalDensity.current
     val strokeWidthPx = with(density) { strokeWidthDp.dp.toPx() }
-    val chartSizePx = with(density) { chartSize.toPx() }
+    val chartSizePx = with(density) { chartSizeDp.toPx() }
     val diameter = chartSizePx - strokeWidthPx
     val centerX = chartSizePx / 2f
     val centerY = chartSizePx / 2f
@@ -75,6 +98,8 @@ fun DonutChart(
         isFakeBoldText = true
         textAlign = Paint.Align.CENTER
     }
+
+    var selectedSlice by remember(slices) { mutableStateOf<DonutSlice?>(null) }
 
     data class FittedLabel(val text: String, val fontPx: Float)
 
@@ -103,47 +128,75 @@ fun DonutChart(
         return null
     }
 
+    fun normalizeAngle(degrees: Float): Float {
+        var a = degrees % 360f
+        if (a < 0f) a += 360f
+        return a
+    }
+
+    fun angleInsideSlice(angle: Float, start: Float, sweep: Float): Boolean {
+        val a = normalizeAngle(angle)
+        val s = normalizeAngle(start)
+        val e = normalizeAngle(start + sweep)
+        return if (s <= e) a in s..e else a >= s || a <= e
+    }
+
     Column(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size(chartSize)
+            modifier = Modifier
+                .size(chartSizeDp)
+                .pointerInput(sliceAngles, strokeWidthPx, diameter) {
+                    detectTapGestures { tap ->
+                        val dx = tap.x - centerX
+                        val dy = tap.y - centerY
+                        val distance = sqrt(dx * dx + dy * dy)
+                        val ringRadius = diameter / 2f
+                        val innerRadius = ringRadius - strokeWidthPx / 2f
+                        val outerRadius = ringRadius + strokeWidthPx / 2f
+
+                        if (distance < innerRadius || distance > outerRadius) {
+                            selectedSlice = null
+                            return@detectTapGestures
+                        }
+
+                        var angle = Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
+                        if (angle < 0f) angle += 360f
+
+                        val hit = sliceAngles.firstOrNull { angleInsideSlice(angle, it.startAngle, it.sweepAngle) }
+                        selectedSlice = hit?.slice
+                    }
+                }
         ) {
             // Canvas for drawing arcs
             Canvas(modifier = Modifier.matchParentSize()) {
                 val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
                 val arcSize = Size(diameter, diameter)
-                var startAngle = -90f
-                val gapDegrees = 2f
-
-                slices.forEach { slice ->
-                    val sweep = (slice.value.toFloat() / totalMs.toFloat()) * (360f - gapDegrees * slices.size)
+                sliceAngles.forEach { angleSlice ->
                     drawArc(
-                        color = slice.color,
-                        startAngle = startAngle,
-                        sweepAngle = sweep,
+                        color = angleSlice.slice.color,
+                        startAngle = angleSlice.startAngle,
+                        sweepAngle = angleSlice.sweepAngle,
                         useCenter = false,
                         topLeft = topLeft,
                         size = arcSize,
                         style = Stroke(width = strokeWidthPx, cap = StrokeCap.Butt)
                     )
-                    startAngle += sweep + gapDegrees
                 }
             }
 
             // Overlay layer for labels
             Box(modifier = Modifier.matchParentSize()) {
-                var startAngle = -90f
-                val gapDegrees = 2f
                 val placedBounds = mutableListOf<RectF>()
 
-                slices.forEach { slice ->
-                    val sweep = (slice.value.toFloat() / totalMs.toFloat()) * (360f - gapDegrees * slices.size)
+                sliceAngles.forEach { angleSlice ->
+                    val sweep = angleSlice.sweepAngle
 
-                    if (sweep >= 10f) {
-                        val midAngle = startAngle + sweep / 2f
+                    if (sweep >= 9f) {
+                        val midAngle = angleSlice.startAngle + sweep / 2f
                         val rad = Math.toRadians(midAngle.toDouble())
                         val xPx = centerX + (labelRadius * kotlin.math.cos(rad)).toFloat()
                         val yPx = centerY + (labelRadius * kotlin.math.sin(rad)).toFloat()
@@ -152,7 +205,7 @@ fun DonutChart(
                         val arcLengthPx = (labelRadius * theta).toFloat()
                         val maxWidthPx = (kotlin.math.min(chordWidthPx, arcLengthPx) * 0.9f).coerceAtLeast(20f)
 
-                        val fitted = fitLabel(slice.label, maxWidthPx)
+                        val fitted = fitLabel(angleSlice.slice.label, maxWidthPx)
                         if (fitted != null) {
                             val fontSp = with(density) { fitted.fontPx.toSp() }
                             val boxLeft = xPx - maxWidthPx / 2f
@@ -182,8 +235,6 @@ fun DonutChart(
                             }
                         }
                     }
-
-                    startAngle += sweep + gapDegrees
                 }
             }
 
@@ -193,5 +244,15 @@ fun DonutChart(
                 fontWeight = FontWeight.Bold
             )
         }
+
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = selectedSlice?.let {
+                val minutes = (it.value / 60_000L).coerceAtLeast(1L)
+                "${it.label}: ${minutes} min"
+            } ?: "Tap a slice to see minutes",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selectedSlice != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

@@ -20,6 +20,8 @@ class App : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        com.scaevo.worker.DailyAggregationWorker.schedule(WorkManager.getInstance(this))
+        val workManager = WorkManager.getInstance(this)
+        com.scaevo.worker.DailyAggregationWorker.schedule(workManager)
+        com.scaevo.worker.WidgetRefreshWorker.schedule(workManager)
     }
 }

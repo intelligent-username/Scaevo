@@ -22,10 +22,11 @@ class AppBlockingAccessibilityService : AccessibilityService() {
     private val usageStatsHelper by lazy { entryPoint.usageStatsHelper() }
 
     // Cache the blocklist to avoid a DB hit on every window event.
-    // Refresh every 60 seconds.
+    // Refresh frequently so limit edits are reflected quickly.
     private var cachedBlocklist: Map<String, Int?> = emptyMap()
     private var cacheTimestamp = 0L
-    private val cacheLifetimeMs = 60_000L
+    private val cacheLifetimeMs = 5_000L
+    private var lastBlockActionMsByPackage: MutableMap<String, Long> = mutableMapOf()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -48,7 +49,7 @@ class AppBlockingAccessibilityService : AccessibilityService() {
         if (cachedBlocklist.containsKey(packageName)) {
             if (limitMinutes == null) {
                 // Hard block
-                performGlobalAction(GLOBAL_ACTION_HOME)
+                blockPackage(packageName)
             } else {
                 // Check if limit exceeded
                 Thread {
@@ -58,7 +59,7 @@ class AppBlockingAccessibilityService : AccessibilityService() {
                     val stats = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs)
                     val usedMs = stats.find { it.packageName == packageName }?.totalForegroundMs ?: 0L
                     if (usedMs >= limitMinutes * 60_000L) {
-                        performGlobalAction(GLOBAL_ACTION_HOME)
+                        blockPackage(packageName)
                     }
                 }.start()
             }
@@ -74,11 +75,17 @@ class AppBlockingAccessibilityService : AccessibilityService() {
     }
 
     private fun refreshCache() {
-        Thread {
-            cachedBlocklist = blocklistRepo.getEnabledBlockedAppsSync()
-                .associate { it.packageName to it.dailyLimitMinutes }
-            cacheTimestamp = System.currentTimeMillis()
-        }.start()
+        cachedBlocklist = blocklistRepo.getEnabledBlockedAppsSync()
+            .associate { it.packageName to it.dailyLimitMinutes }
+        cacheTimestamp = System.currentTimeMillis()
+    }
+
+    private fun blockPackage(packageName: String) {
+        val now = System.currentTimeMillis()
+        val lastAction = lastBlockActionMsByPackage[packageName] ?: 0L
+        if (now - lastAction < 2_500L) return
+        lastBlockActionMsByPackage[packageName] = now
+        performGlobalAction(GLOBAL_ACTION_HOME)
     }
 
     @EntryPoint

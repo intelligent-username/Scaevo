@@ -27,7 +27,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.scaevo.data.db.entity.DailyUsageStat
 import com.scaevo.ui.components.DonutChart
 import com.scaevo.ui.components.HourlyBarChart
-import com.scaevo.ui.components.SummaryStatsRow
 import com.scaevo.ui.utils.formatDuration
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -77,16 +76,36 @@ fun DashboardScreen(
         } else {
             LazyColumn(contentPadding = padding) {
                 item {
-                    SummaryStatsRow(
-                        totalMs = totalMs,
-                        unlockCount = unlockCount,
-                        mostUsedApp = mostUsedApp
-                    )
-                }
-
-                item {
                     Spacer(Modifier.height(16.dp))
-                    DonutChart(stats = stats)
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surface
+                        ),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 12.dp)
+                        ) {
+                            DonutChart(
+                                stats = stats,
+                                chartSizeDp = 300.dp,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                            Text(
+                                text = "${unlockCount} unlocks",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(end = 10.dp, bottom = 8.dp)
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(24.dp))
                 }
 

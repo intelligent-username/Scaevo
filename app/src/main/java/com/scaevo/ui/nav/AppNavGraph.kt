@@ -1,6 +1,7 @@
 package com.scaevo.ui.nav
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -18,10 +19,19 @@ import androidx.navigation.navArgument
 @Composable
 fun AppNavGraph() {
     val navController = rememberNavController()
+    val helper = hiltViewModel<PermissionsViewModel>().helper
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    val startDest = remember {
+        if (helper.hasUsagePermission() && com.scaevo.ui.utils.isAccessibilityServiceEnabled(context)) {
+            "dashboard"
+        } else {
+            "permissions"
+        }
+    }
 
-    NavHost(navController = navController, startDestination = "permissions") {
+    NavHost(navController = navController, startDestination = startDest) {
         composable("permissions") {
-            val helper = hiltViewModel<PermissionsViewModel>().helper
             PermissionsScreen(
                 onAllGranted = {
                     navController.navigate("dashboard") {
