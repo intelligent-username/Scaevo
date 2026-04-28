@@ -7,10 +7,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -22,16 +28,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.scaevo.ui.components.DonutChart
 import com.scaevo.ui.components.WeeklyTrendChart
 import com.scaevo.ui.utils.formatDuration
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReportScreen(
     viewModel: ReportViewModel,
-    onNavigateToAppDetail: (String) -> Unit
+    onNavigateToAppDetail: (String) -> Unit,
+    onNavigateToDaySummary: (Long) -> Unit,
+    onNavigateToSettings: () -> Unit,
 ) {
     val totals by viewModel.weeklyDonutStats.collectAsStateWithLifecycle()
     val summaries by viewModel.weeklySummaries.collectAsStateWithLifecycle()
     val delta by viewModel.weekOverWeekDelta.collectAsStateWithLifecycle()
+    val range by viewModel.weekRange.collectAsStateWithLifecycle()
+    val canGoNext by viewModel.canGoToNextWeek.collectAsStateWithLifecycle()
+    var pressedDay by remember { mutableStateOf<com.scaevo.data.db.entity.DailyDeviceSummary?>(null) }
     
     val sortedTotals = totals.sortedByDescending { it.totalForegroundMs }
     val maxMs = sortedTotals.firstOrNull()?.totalForegroundMs ?: 1L
@@ -40,6 +54,11 @@ fun ReportScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Last 7 Days") },
+                actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background
                 )
@@ -65,6 +84,40 @@ fun ReportScreen(
         } else {
             LazyColumn(contentPadding = padding) {
                 item {
+                    // Week navigation
+                    val startDate = LocalDate.ofEpochDay(range.first)
+                    val endDate = LocalDate.ofEpochDay(range.second)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(onClick = {
+                            pressedDay = null
+                            viewModel.goToPreviousWeek()
+                        }) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous week")
+                        }
+
+                        Text(
+                            text = "${startDate.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${startDate.dayOfMonth} – ${endDate.month.getDisplayName(TextStyle.SHORT, Locale.getDefault())} ${endDate.dayOfMonth}",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        IconButton(
+                            onClick = {
+                                pressedDay = null
+                                viewModel.goToNextWeek()
+                            },
+                            enabled = canGoNext
+                        ) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Next week")
+                        }
+                    }
+
                     if (delta != null) {
                         val sign = if (delta!! > 0) "+" else ""
                         Text(
@@ -76,6 +129,19 @@ fun ReportScreen(
                     }
                     WeeklyTrendChart(
                         summaries = summaries,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        onDayPressed = { day -> pressedDay = day },
+                        onDayReleased = { pressedDay = null },
+                        onDayClicked = { day -> onNavigateToDaySummary(day.dateEpochDay) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = pressedDay?.let {
+                            val d = LocalDate.ofEpochDay(it.dateEpochDay)
+                            "${d.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())}: ${formatDuration(it.totalScreenTimeMs)}"
+                        } ?: "Press a day to preview, tap to open",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                     Spacer(Modifier.height(24.dp))

@@ -177,7 +177,7 @@ fun BlocklistScreen(viewModel: BlocklistViewModel) {
                 mutableStateOf(selectedAppForLimit?.dailyLimitMinutes?.toString() ?: "") 
             }
             val parsedMinutes = limitInput.toIntOrNull()
-            val isValidLimit = parsedMinutes != null && parsedMinutes > 0
+            val isValidLimit = parsedMinutes != null && parsedMinutes >= 0
 
             AlertDialog(
                 onDismissRequest = { selectedAppForLimit = null },
@@ -192,7 +192,7 @@ fun BlocklistScreen(viewModel: BlocklistViewModel) {
                         isError = limitInput.isNotEmpty() && !isValidLimit,
                         supportingText = {
                             if (limitInput.isNotEmpty() && !isValidLimit) {
-                                Text("Enter a positive number")
+                                Text("Enter 0 or a positive number")
                             }
                         }
                     )

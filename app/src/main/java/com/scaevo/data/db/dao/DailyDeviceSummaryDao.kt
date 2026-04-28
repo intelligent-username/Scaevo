@@ -16,6 +16,13 @@ interface DailyDeviceSummaryDao {
     @Query("SELECT * FROM daily_device_summary WHERE date_epoch_day >= :startDay ORDER BY date_epoch_day ASC")
     fun getSummariesSince(startDay: Long): Flow<List<DailyDeviceSummary>>
 
+    @Query(
+        "SELECT * FROM daily_device_summary " +
+            "WHERE date_epoch_day BETWEEN :startDay AND :endDay " +
+            "ORDER BY date_epoch_day ASC"
+    )
+    fun getSummariesBetween(startDay: Long, endDay: Long): Flow<List<DailyDeviceSummary>>
+
     @Query("SELECT * FROM daily_device_summary WHERE date_epoch_day = :day LIMIT 1")
     suspend fun getSummaryForDay(day: Long): DailyDeviceSummary?
 }

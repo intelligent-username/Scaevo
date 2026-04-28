@@ -4,6 +4,7 @@ import com.scaevo.data.db.dao.DailyUsageStatDao
 import com.scaevo.data.db.dao.DailyDeviceSummaryDao
 import com.scaevo.data.db.entity.DailyUsageStat
 import com.scaevo.data.db.entity.DailyDeviceSummary
+import com.scaevo.data.settings.UserSettingsRepository
 import com.scaevo.data.usage.UsageStatsHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +16,8 @@ import javax.inject.Inject
 class UsageRepository @Inject constructor(
     private val dao: DailyUsageStatDao,
     private val dailyDeviceSummaryDao: DailyDeviceSummaryDao,
-    private val usageStatsHelper: UsageStatsHelper
+    private val usageStatsHelper: UsageStatsHelper,
+    private val userSettingsRepository: UserSettingsRepository
 ) {
     /**
      * Returns a Flow of the last [days] days of aggregated usage from Room.
@@ -34,9 +36,11 @@ class UsageRepository @Inject constructor(
         val today = LocalDate.now()
         val startMs = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val endMs = System.currentTimeMillis()
-        val launchCounts = usageStatsHelper.queryLaunchCounts(startMs, endMs)
+        val includeHomeScreen = userSettingsRepository.readIncludeHomeScreen()
+        val launchCounts = usageStatsHelper.queryLaunchCounts(startMs, endMs, includeHomeScreen)
 
-        val raw = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs).map { stat ->
+        val raw = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs, includeHomeScreen)
+            .map { stat ->
             DailyUsageStat(
                 packageName = stat.packageName,
                 appLabel = usageStatsHelper.getAppLabel(stat.packageName),
@@ -64,5 +68,21 @@ class UsageRepository @Inject constructor(
     fun getWeeklySummaries(days: Int = 7): Flow<List<DailyDeviceSummary>> {
         val startDay = LocalDate.now().minusDays(days.toLong()).toEpochDay()
         return dailyDeviceSummaryDao.getSummariesSince(startDay)
+    }
+
+    fun getWeeklyStatsBetween(startEpochDay: Long, endEpochDay: Long): Flow<List<DailyUsageStat>> {
+        return dao.getStatsBetween(startEpochDay, endEpochDay)
+    }
+
+    fun getWeeklySummariesBetween(startEpochDay: Long, endEpochDay: Long): Flow<List<DailyDeviceSummary>> {
+        return dailyDeviceSummaryDao.getSummariesBetween(startEpochDay, endEpochDay)
+    }
+
+    suspend fun getStatsForDay(epochDay: Long): List<DailyUsageStat> = withContext(Dispatchers.IO) {
+        dao.getStatsForDay(epochDay)
+    }
+
+    suspend fun getDeviceSummaryForDay(epochDay: Long): DailyDeviceSummary? = withContext(Dispatchers.IO) {
+        dailyDeviceSummaryDao.getSummaryForDay(epochDay)
     }
 }

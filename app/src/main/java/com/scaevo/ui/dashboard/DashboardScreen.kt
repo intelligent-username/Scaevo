@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -35,7 +36,8 @@ fun DashboardScreen(
     viewModel: DashboardViewModel,
     onNavigateToReport: () -> Unit,
     onNavigateToBlocklist: () -> Unit,
-    onNavigateToAppDetail: (String) -> Unit
+    onNavigateToAppDetail: (String) -> Unit,
+    onNavigateToSettings: () -> Unit,
 ) {
     val stats by viewModel.todayStats.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
@@ -60,6 +62,9 @@ fun DashboardScreen(
                     }
                     IconButton(onClick = onNavigateToBlocklist) {
                         Icon(Icons.Default.Block, contentDescription = "Blocklist")
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

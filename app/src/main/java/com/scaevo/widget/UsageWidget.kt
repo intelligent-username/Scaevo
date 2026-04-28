@@ -25,6 +25,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import com.scaevo.data.usage.UsageStatsHelper
+import com.scaevo.data.settings.UserSettingsRepository
 import com.scaevo.ui.utils.formatDuration
 import java.time.LocalDate
 import java.time.ZoneId
@@ -117,6 +118,10 @@ class UsageWidget : GlanceAppWidget() {
         val startMs = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val usageStatsHelper = UsageStatsHelper(context)
 
+        val includeHome = context
+            .getSharedPreferences(UserSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(UserSettingsRepository.KEY_INCLUDE_HOME, false)
+
         if (!usageStatsHelper.hasUsagePermission()) {
             return WidgetSummary(
                 hasPermission = false,
@@ -125,16 +130,16 @@ class UsageWidget : GlanceAppWidget() {
             )
         }
 
-        val durations = usageStatsHelper.queryForegroundDurationsForRange(startMs, nowMs)
+        val durations = usageStatsHelper.queryForegroundDurationsForRange(startMs, nowMs, includeHome)
             .associate { it.packageName to it.totalForegroundMs }
 
         val totalMs = durations.values.sum()
 
         val segmentPalette = listOf(
-            Color(0xFF00E5FF), // Cyan
-            Color(0xFF39FF14), // Neon Green
-            Color(0xFFFF2BD6), // Neon Pink
-            Color(0xFFFFE600), // Yellow
+            Color(0x0E4C92FF),  // Cyan
+            Color(0x028A0FFF),    // Neon Green
+            Color(0x900D09FF),    // Red
+            Color(0xFCD12AAA),  // Yellow
         )
         
         val sortedDurations = durations.entries

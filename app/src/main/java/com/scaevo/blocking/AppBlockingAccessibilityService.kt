@@ -41,6 +41,7 @@ class AppBlockingAccessibilityService : AccessibilityService() {
 
         // Ignore system UI, launcher, and self
         if (packageName == "com.android.systemui" ||
+            usageStatsHelper.isHomePackage(packageName) ||
             packageName == applicationContext.packageName) return
 
         refreshCacheIfStale()

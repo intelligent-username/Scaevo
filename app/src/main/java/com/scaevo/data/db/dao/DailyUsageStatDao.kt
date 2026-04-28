@@ -24,6 +24,13 @@ interface DailyUsageStatDao {
     """)
     fun getStatsSince(startEpochDay: Long): Flow<List<DailyUsageStat>>
 
+    @Query(
+        "SELECT * FROM daily_usage_stats " +
+            "WHERE date_epoch_day BETWEEN :startEpochDay AND :endEpochDay " +
+            "ORDER BY date_epoch_day ASC, total_foreground_ms DESC"
+    )
+    fun getStatsBetween(startEpochDay: Long, endEpochDay: Long): Flow<List<DailyUsageStat>>
+
     @Query("""
         SELECT * FROM daily_usage_stats
         WHERE date_epoch_day = :epochDay

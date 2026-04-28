@@ -150,25 +150,33 @@ fun DonutChart(
             modifier = Modifier
                 .size(chartSizeDp)
                 .pointerInput(sliceAngles, strokeWidthPx, diameter) {
-                    detectTapGestures { tap ->
-                        val dx = tap.x - centerX
-                        val dy = tap.y - centerY
-                        val distance = sqrt(dx * dx + dy * dy)
-                        val ringRadius = diameter / 2f
-                        val innerRadius = ringRadius - strokeWidthPx / 2f
-                        val outerRadius = ringRadius + strokeWidthPx / 2f
+                    detectTapGestures(
+                        onPress = { down ->
+                            val dx = down.x - centerX
+                            val dy = down.y - centerY
+                            val distance = sqrt(dx * dx + dy * dy)
+                            val ringRadius = diameter / 2f
+                            val innerRadius = ringRadius - strokeWidthPx / 2f
+                            val outerRadius = ringRadius + strokeWidthPx / 2f
 
-                        if (distance < innerRadius || distance > outerRadius) {
+                            if (distance < innerRadius || distance > outerRadius) {
+                                selectedSlice = null
+                                tryAwaitRelease()
+                                selectedSlice = null
+                                return@detectTapGestures
+                            }
+
+                            var angle = Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
+                            if (angle < 0f) angle += 360f
+
+                            val hit = sliceAngles.firstOrNull { angleInsideSlice(angle, it.startAngle, it.sweepAngle) }
+                            selectedSlice = hit?.slice
+
+                            // Keep it visible while pressing; clear on release/cancel.
+                            tryAwaitRelease()
                             selectedSlice = null
-                            return@detectTapGestures
                         }
-
-                        var angle = Math.toDegrees(atan2(dy, dx).toDouble()).toFloat()
-                        if (angle < 0f) angle += 360f
-
-                        val hit = sliceAngles.firstOrNull { angleInsideSlice(angle, it.startAngle, it.sweepAngle) }
-                        selectedSlice = hit?.slice
-                    }
+                    )
                 }
         ) {
             // Canvas for drawing arcs
@@ -250,7 +258,7 @@ fun DonutChart(
             text = selectedSlice?.let {
                 val minutes = (it.value / 60_000L).coerceAtLeast(1L)
                 "${it.label}: ${minutes} min"
-            } ?: "Tap a slice to see minutes",
+            } ?: "Press and hold a slice",
             style = MaterialTheme.typography.labelLarge,
             color = if (selectedSlice != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )

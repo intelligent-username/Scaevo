@@ -21,8 +21,9 @@ fun AppLimitProgressBar(
     modifier: Modifier = Modifier
 ) {
     val limitMs = limitMinutes * 60_000L
-    val progress = (usedMs.toFloat() / limitMs.toFloat()).coerceIn(0f, 1f)
-    val exceeded = usedMs >= limitMs
+    val exceeded = limitMs <= 0L || usedMs >= limitMs
+    val progress = if (limitMs <= 0L) 1f
+    else (usedMs.toFloat() / limitMs.toFloat()).coerceIn(0f, 1f)
     val color = if (exceeded) MaterialTheme.colorScheme.error
     else MaterialTheme.colorScheme.primary
 

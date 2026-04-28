@@ -20,9 +20,22 @@ class UsageStatsHelper @Inject constructor(
 
     private val packageManager = context.packageManager
 
-    // Track only launcher apps so system packages/launcher don't skew user-facing usage.
-    private val trackablePackages: Set<String> by lazy {
-        getInstalledUserApps().map { it.first }.toSet()
+    private val homePackages: Set<String> by lazy {
+        // Includes the current default home and any other installed HOME handlers.
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolved = runCatching {
+            packageManager.queryIntentActivities(intent, 0)
+                .mapNotNull { it.activityInfo?.packageName }
+                .toSet()
+        }.getOrDefault(emptySet())
+
+        val defaultHome = runCatching {
+            packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                ?.activityInfo
+                ?.packageName
+        }.getOrNull()
+
+        if (defaultHome.isNullOrBlank()) resolved else resolved + defaultHome
     }
 
     data class AppForegroundDuration(
@@ -39,7 +52,7 @@ class UsageStatsHelper @Inject constructor(
         if (!hasUsagePermission()) return emptyList()
         return usageStatsManager
             .queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startMs, endMs)
-            ?.filter { it.totalTimeInForeground > 0 && shouldTrackPackage(it.packageName) }
+            ?.filter { it.totalTimeInForeground > 0 && shouldTrackPackage(it.packageName, includeHomeScreen = false) }
             ?: emptyList()
     }
 
@@ -47,7 +60,11 @@ class UsageStatsHelper @Inject constructor(
      * Computes exact foreground durations per package from UsageEvents in [startMs, endMs].
      * This is more precise for "today" windows (local midnight -> now) than interval aggregates.
      */
-    fun queryForegroundDurationsForRange(startMs: Long, endMs: Long): List<AppForegroundDuration> {
+    fun queryForegroundDurationsForRange(
+        startMs: Long,
+        endMs: Long,
+        includeHomeScreen: Boolean = false
+    ): List<AppForegroundDuration> {
         if (!hasUsagePermission() || endMs <= startMs) return emptyList()
 
         val durations = mutableMapOf<String, Long>()
@@ -66,7 +83,7 @@ class UsageStatsHelper @Inject constructor(
             when (initialEvent.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED,
                 UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    if (shouldTrackPackage(initialEvent.packageName)) {
+                    if (shouldTrackPackage(initialEvent.packageName, includeHomeScreen)) {
                         lastResumedPackageAtStart = initialEvent.packageName
                         lastResumedTimeAtStart = initialEvent.timeStamp
                     }
@@ -112,7 +129,7 @@ class UsageStatsHelper @Inject constructor(
                 UsageEvents.Event.ACTIVITY_RESUMED,
                 UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                     val packageName = event.packageName
-                    if (!shouldTrackPackage(packageName)) {
+                    if (!shouldTrackPackage(packageName, includeHomeScreen)) {
                         closeCurrentSession(event.timeStamp)
                         continue
                     }
@@ -161,6 +178,14 @@ class UsageStatsHelper @Inject constructor(
      * Counts ACTIVITY_RESUMED events per package in the given window.
      */
     fun queryLaunchCounts(startMs: Long, endMs: Long): Map<String, Int> {
+        return queryLaunchCounts(startMs, endMs, includeHomeScreen = false)
+    }
+
+    fun queryLaunchCounts(
+        startMs: Long,
+        endMs: Long,
+        includeHomeScreen: Boolean = false
+    ): Map<String, Int> {
         if (!hasUsagePermission()) return emptyMap()
         val counts = mutableMapOf<String, Int>()
         val events = usageStatsManager.queryEvents(startMs, endMs)
@@ -168,7 +193,10 @@ class UsageStatsHelper @Inject constructor(
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             val packageName = event.packageName
-            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED && shouldTrackPackage(packageName)) {
+            if (
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED &&
+                shouldTrackPackage(packageName, includeHomeScreen)
+            ) {
                 counts[packageName!!] = (counts[packageName] ?: 0) + 1
             }
         }
@@ -217,6 +245,14 @@ class UsageStatsHelper @Inject constructor(
      * Returns a zeroed array if permission is not granted.
      */
     fun queryHourlyBreakdown(startMs: Long, endMs: Long): LongArray {
+        return queryHourlyBreakdown(startMs, endMs, includeHomeScreen = false)
+    }
+
+    fun queryHourlyBreakdown(
+        startMs: Long,
+        endMs: Long,
+        includeHomeScreen: Boolean = false
+    ): LongArray {
         if (!hasUsagePermission()) return LongArray(24)
         val hourlyMs = LongArray(24)
         
@@ -231,7 +267,9 @@ class UsageStatsHelper @Inject constructor(
             initialEvents.getNextEvent(initialEvent)
             when (initialEvent.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED, UsageEvents.Event.MOVE_TO_FOREGROUND -> {
-                    if (shouldTrackPackage(initialEvent.packageName)) lastResumedPackageAtStart = initialEvent.packageName
+                    if (shouldTrackPackage(initialEvent.packageName, includeHomeScreen)) {
+                        lastResumedPackageAtStart = initialEvent.packageName
+                    }
                 }
                 UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.MOVE_TO_BACKGROUND,
                 UsageEvents.Event.ACTIVITY_STOPPED -> {
@@ -266,7 +304,7 @@ class UsageStatsHelper @Inject constructor(
                 UsageEvents.Event.ACTIVITY_RESUMED,
                 UsageEvents.Event.MOVE_TO_FOREGROUND -> {
                     val packageName = event.packageName
-                    if (!shouldTrackPackage(packageName)) {
+                    if (!shouldTrackPackage(packageName, includeHomeScreen)) {
                         closeCurrentAndSplit(event.timeStamp)
                         continue
                     }
@@ -331,8 +369,25 @@ class UsageStatsHelper @Inject constructor(
         return count
     }
 
-    private fun shouldTrackPackage(packageName: String?): Boolean {
-        if (packageName == null || packageName == context.packageName) return false
-        return trackablePackages.contains(packageName)
+    fun isHomePackage(packageName: String?): Boolean {
+        val pkg = packageName?.trim().orEmpty()
+        return pkg.isNotEmpty() && homePackages.contains(pkg)
+    }
+
+    private fun shouldTrackPackage(packageName: String?, includeHomeScreen: Boolean): Boolean {
+        val pkg = packageName?.trim().orEmpty()
+        if (pkg.isEmpty()) return false
+        if (pkg == context.packageName) return false
+
+        // Don't attribute time to framework/internal placeholders.
+        if (pkg == "android") return false
+
+        // Ignore the launcher/home screen unless the user opts in.
+        if (!includeHomeScreen && homePackages.contains(pkg)) return false
+
+        // IMPORTANT: Do not rely on launcher queries / package-visibility to decide trackability.
+        // On Android 11+ those queries can be incomplete unless QUERY_ALL_PACKAGES is granted,
+        // which causes massive under-counting.
+        return true
     }
 }

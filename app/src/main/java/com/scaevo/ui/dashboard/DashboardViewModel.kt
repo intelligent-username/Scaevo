@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.scaevo.data.db.entity.DailyUsageStat
 import com.scaevo.data.repository.UsageRepository
+import com.scaevo.data.settings.UserSettingsRepository
 import com.scaevo.data.usage.UsageStatsHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +23,8 @@ import javax.inject.Inject
 @HiltViewModel
 class DashboardViewModel @Inject constructor(
     private val usageRepository: UsageRepository,
-    private val usageStatsHelper: UsageStatsHelper
+    private val usageStatsHelper: UsageStatsHelper,
+    private val userSettingsRepository: UserSettingsRepository,
 ) : ViewModel() {
 
     private val _todayStats = MutableStateFlow<List<DailyUsageStat>>(emptyList())
@@ -53,7 +55,8 @@ class DashboardViewModel @Inject constructor(
             
             _todayStats.value = usageRepository.getTodayLive()
             _hourlyBreakdown.value = withContext(Dispatchers.IO) {
-                usageStatsHelper.queryHourlyBreakdown(startMs, currentMs)
+                val includeHome = userSettingsRepository.readIncludeHomeScreen()
+                usageStatsHelper.queryHourlyBreakdown(startMs, currentMs, includeHome)
             }
             _unlockCount.value = withContext(Dispatchers.IO) {
                 usageStatsHelper.queryUnlockCount(startMs, currentMs)

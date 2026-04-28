@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.scaevo.data.db.entity.BlockedApp
 import com.scaevo.data.repository.BlocklistRepository
+import com.scaevo.data.settings.UserSettingsRepository
 import com.scaevo.data.usage.UsageStatsHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +23,8 @@ import javax.inject.Inject
 @HiltViewModel
 class BlocklistViewModel @Inject constructor(
     private val blocklistRepository: BlocklistRepository,
-    private val usageStatsHelper: UsageStatsHelper
+    private val usageStatsHelper: UsageStatsHelper,
+    private val userSettingsRepository: UserSettingsRepository,
 ) : ViewModel() {
 
     val blockedApps: StateFlow<List<BlockedApp>> =
@@ -55,7 +57,8 @@ class BlocklistViewModel @Inject constructor(
         val today = LocalDate.now()
         val startMs = today.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
         val endMs = System.currentTimeMillis()
-        val stats = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs)
+        val includeHome = userSettingsRepository.readIncludeHomeScreen()
+        val stats = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs, includeHome)
         _todayLiveUsages.value = stats.associate { it.packageName to it.totalForegroundMs }
     }
 

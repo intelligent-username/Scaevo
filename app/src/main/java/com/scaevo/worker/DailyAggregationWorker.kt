@@ -12,6 +12,7 @@ import com.scaevo.data.db.dao.DailyUsageStatDao
 import com.scaevo.data.db.dao.DailyDeviceSummaryDao
 import com.scaevo.data.db.entity.DailyUsageStat
 import com.scaevo.data.db.entity.DailyDeviceSummary
+import com.scaevo.data.settings.UserSettingsRepository
 import com.scaevo.data.usage.UsageStatsHelper
 import com.scaevo.widget.UsageWidget
 import dagger.assisted.Assisted
@@ -28,19 +29,21 @@ class DailyAggregationWorker @AssistedInject constructor(
     @Assisted params: WorkerParameters,
     private val usageStatsHelper: UsageStatsHelper,
     private val dao: DailyUsageStatDao,
-    private val dailyDeviceSummaryDao: DailyDeviceSummaryDao
+    private val dailyDeviceSummaryDao: DailyDeviceSummaryDao,
+    private val userSettingsRepository: UserSettingsRepository,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
+        val includeHome = userSettingsRepository.readIncludeHomeScreen()
         val yesterday = LocalDate.now().minusDays(1)
         val zoneId = ZoneId.systemDefault()
         val startMs = yesterday.atStartOfDay(zoneId).toInstant().toEpochMilli()
         val endMs = yesterday.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli()
 
-        val rawStats = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs)
+        val rawStats = usageStatsHelper.queryForegroundDurationsForRange(startMs, endMs, includeHome)
         if (rawStats.isEmpty()) return Result.success()
 
-        val launchCounts = usageStatsHelper.queryLaunchCounts(startMs, endMs)
+        val launchCounts = usageStatsHelper.queryLaunchCounts(startMs, endMs, includeHome)
 
         val entities = rawStats.map { stat ->
             DailyUsageStat(
